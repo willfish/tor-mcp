@@ -20,11 +20,14 @@ async fn main() -> Result<()> {
             let size = stream.read(&mut request).await.unwrap_or(0);
             let request = String::from_utf8_lossy(&request[..size]);
             let path = request.split_whitespace().nth(1).unwrap_or("/");
+            if path == "/slow" {
+                tokio::time::sleep(std::time::Duration::from_secs(75)).await;
+            }
             let second = path.starts_with("/two");
             let title = if second { "Fixture Two" } else { "Fixture One" };
             let body = format!(
                 r#"<!doctype html><html><head><title>{title}</title><meta http-equiv="Onion-Location" content="http://{onion}/one"></head><body>
-<h1>{title}</h1><p>A harmless test page.</p><label for="name">Your test name</label><input id="name" value="original">
+<h1>{title}</h1><p>A harmless test page.</p><p>Plain text onion: http://{onion}/text-only. Bare onion: {onion}. Invalid onion: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion</p><label for="name">Your test name</label><input id="name" value="original">
 <label for="password">Test password</label><input id="password" type="password" value="not-for-snapshots">
 <label for="upload">Test file field</label><input id="upload" type="file">
 <button id="change" onclick="document.getElementById('message').textContent='Hello '+document.getElementById('name').value">Change message</button>

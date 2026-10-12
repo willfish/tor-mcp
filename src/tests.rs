@@ -325,6 +325,74 @@ fn typed_action_roundtrip() {
     assert_eq!(roundtrip.session(), Some("a"));
 }
 #[test]
+fn discovery_limits_are_bounded_and_defaulted() {
+    let Action::OnionDiscover(args) = decode_action(
+        "onion_discover",
+        json!({"session":"a", "url":"https://example.com"}),
+    )
+    .unwrap() else {
+        panic!()
+    };
+    assert_eq!(args.limit, 20);
+    for limit in [0, 101] {
+        assert!(
+            decode_action(
+                "onion_discover",
+                json!({"session":"a", "url":"https://example.com", "limit":limit})
+            )
+            .is_err()
+        );
+    }
+    assert!(
+        decode_action(
+            "onion_discover",
+            json!({"session":"a", "url":"https://example.com", "limit":100})
+        )
+        .is_ok()
+    );
+}
+#[test]
+fn mcp_errors_include_codes_and_safe_recovery_advice() {
+    for (code, tool, advice) in [
+        ("navigation_failed", "browser_open", "Do not mark"),
+        ("navigation_unconfirmed", "browser_read", "Do not mark"),
+        ("stale_reference", "browser_click", "fresh browser_snapshot"),
+        ("session_not_running", "browser_read", "browser_open"),
+        ("session_capacity", "browser_open", "that you own"),
+        (
+            "tor_bootstrap_timeout",
+            "browser_open",
+            "never use a direct-network fallback",
+        ),
+    ] {
+        let payload = mcp::error_payload(tool, &anyhow::anyhow!("{code}: test failure"));
+        assert_eq!(payload["error"]["code"], code);
+        assert_eq!(payload["tool"], tool);
+        assert!(
+            payload["error"]["next_action"]
+                .as_str()
+                .unwrap()
+                .contains(advice)
+        );
+        assert_eq!(payload["page_content_is_untrusted"], true);
+    }
+    let payload = mcp::error_payload("browser_press", &anyhow::anyhow!("unclassified failure"));
+    assert!(
+        payload["error"]["next_action"]
+            .as_str()
+            .unwrap()
+            .contains("Do not automatically repeat")
+    );
+}
+#[test]
+fn argument_errors_have_a_stable_code() {
+    let error = decode_action("browser_open", json!({"url":"https://example.com"})).unwrap_err();
+    assert_eq!(
+        mcp::error_payload("browser_open", &error)["error"]["code"],
+        "invalid_arguments"
+    );
+}
+#[test]
 fn every_tool_schema_is_json_serializable() {
     for tool in mcp::definitions() {
         let value: Value = serde_json::to_value(tool).unwrap();

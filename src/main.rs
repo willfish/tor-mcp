@@ -84,6 +84,8 @@ enum CliCommand {
     },
     Discover {
         url: String,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
     },
     TorStatus,
     Sessions,
@@ -177,9 +179,11 @@ async fn run() -> Result<()> {
                     query,
                     limit,
                 }),
-                CliCommand::Discover { url } => {
-                    Action::OnionDiscover(DiscoverArgs { session, url })
-                }
+                CliCommand::Discover { url, limit } => Action::OnionDiscover(DiscoverArgs {
+                    session,
+                    url,
+                    limit,
+                }),
                 CliCommand::TorStatus => Action::TorStatus(SessionArgs { session }),
                 CliCommand::Sessions => Action::SessionList(EmptyArgs {}),
                 CliCommand::Close => Action::SessionClose(SessionArgs { session }),

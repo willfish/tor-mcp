@@ -217,6 +217,145 @@ async fn headed_and_live_search_acceptance() -> Result<()> {
 
 #[tokio::test]
 #[ignore = "requires a harmless local onion fixture; set TOR_MCP_TEST_URL"]
+async fn navigation_recovery_and_text_discovery() -> Result<()> {
+    let url = std::env::var("TOR_MCP_TEST_URL")
+        .context("set TOR_MCP_TEST_URL to the fixture /one URL")?;
+    let mut client = Client::start().await?;
+    let session = "model-recovery";
+    client
+        .data("browser_open", json!({"session":session,"url":url}))
+        .await?;
+    let tabs = client
+        .data("browser_tabs", json!({"session":session,"action":"list"}))
+        .await?;
+    let healthy = tabs["tabs"][0]["id"]
+        .as_str()
+        .context("original tab")?
+        .to_owned();
+    client
+        .data(
+            "browser_tabs",
+            json!({"session":session,"action":"new","url":url}),
+        )
+        .await?;
+    let tabs = client
+        .data("browser_tabs", json!({"session":session,"action":"list"}))
+        .await?;
+    let failed_tab = tabs["tabs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tab| tab["active"] == true)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let slow = format!(
+        "{}/slow",
+        url.trim_end_matches("/one").trim_end_matches('/')
+    );
+    let failed = client
+        .tool("browser_open", json!({"session":session,"url":slow}))
+        .await?;
+    assert_eq!(failed["result"]["isError"], true);
+    let error: Value =
+        serde_json::from_str(failed["result"]["content"][0]["text"].as_str().unwrap())?;
+    assert_eq!(error["error"]["code"], "navigation_failed");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("webdriver_timeout")
+    );
+    for (name, args) in [
+        ("browser_read", json!({"session":session})),
+        ("browser_snapshot", json!({"session":session})),
+        ("browser_links", json!({"session":session})),
+        ("browser_screenshot", json!({"session":session})),
+        (
+            "browser_click",
+            json!({"session":session,"target":"#change"}),
+        ),
+        (
+            "browser_fill",
+            json!({"session":session,"target":"#name","text":"must not fill"}),
+        ),
+        ("browser_press", json!({"session":session,"key":"Enter"})),
+        ("browser_wait", json!({"session":session,"text":"Fixture"})),
+    ] {
+        let response = client.tool(name, args).await?;
+        assert_eq!(response["result"]["isError"], true, "{name}");
+        let error: Value =
+            serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap())?;
+        assert_eq!(error["error"]["code"], "navigation_unconfirmed", "{name}");
+        assert!(error["error"]["next_action"].is_string());
+    }
+    client
+        .data(
+            "browser_tabs",
+            json!({"session":session,"action":"select","tab":healthy}),
+        )
+        .await?;
+    assert_eq!(
+        client
+            .data("browser_read", json!({"session":session}))
+            .await?["title"],
+        "Fixture One"
+    );
+    client
+        .data(
+            "browser_tabs",
+            json!({"session":session,"action":"select","tab":failed_tab}),
+        )
+        .await?;
+    assert_eq!(
+        client
+            .tool("browser_read", json!({"session":session}))
+            .await?["result"]["isError"],
+        true
+    );
+    client
+        .data("browser_open", json!({"session":session,"url":url}))
+        .await?;
+    assert_eq!(
+        client
+            .data("browser_read", json!({"session":session}))
+            .await?["title"],
+        "Fixture One"
+    );
+    let discovery = client
+        .data("onion_discover", json!({"session":session,"url":url}))
+        .await?;
+    assert!(
+        discovery["claims"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|claim| claim["method"] == "publisher_text"
+                && claim["url"].as_str().unwrap().ends_with("/text-only"))
+    );
+    assert!(
+        discovery["claims"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|claim| !claim["url"].as_str().unwrap().contains(&"a".repeat(56)))
+    );
+    let bounded = client
+        .data(
+            "onion_discover",
+            json!({"session":session,"url":url,"limit":1}),
+        )
+        .await?;
+    assert_eq!(bounded["claims"].as_array().unwrap().len(), 1);
+    assert_eq!(bounded["truncated"], true);
+    assert_eq!(bounded["source"], url);
+    assert_eq!(bounded["verified_identity"], false);
+    client.finish().await
+}
+
+#[tokio::test]
+#[ignore = "requires a harmless local onion fixture; set TOR_MCP_TEST_URL"]
 async fn local_onion_command_acceptance() -> Result<()> {
     let url = std::env::var("TOR_MCP_TEST_URL")
         .context("set TOR_MCP_TEST_URL to the fixture /one URL")?;
@@ -413,9 +552,13 @@ async fn local_onion_command_acceptance() -> Result<()> {
             json!({"session":"one","action":"close","tab":new_tab}),
         )
         .await?;
-    client
+    let clicked = client
         .data("browser_click", json!({"session":"one","target":"#next"}))
         .await?;
+    assert_eq!(
+        clicked["title"], "Fixture Two",
+        "link click must finish navigation: {clicked}"
+    );
     assert_eq!(
         client
             .data("browser_navigate", json!({"session":"one","action":"back"}))

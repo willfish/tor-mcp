@@ -63,6 +63,13 @@ if (kind === 'snapshot') {
 }
 if (kind === 'discover') {
   const claims = [...document.querySelectorAll('a[href]')].slice(0, 500).map(el => ({url: el.href, source: location.href, method: 'publisher_link', text: name(el).slice(0, 300), verified_identity: false}));
+  const text = (document.body?.innerText || '').slice(0, 30000);
+  const addresses = text.matchAll(/\b(?:https?:\/\/)?(?:[a-z0-9-]+\.)*[a-z2-7]{56}\.onion(?:[/?#][^\s<>"']*)?/gi);
+  for (const match of addresses) {
+    if (claims.length >= 1000) break;
+    const address = match[0].replace(/[),.;\]}]+$/, '');
+    try { claims.push({url: new URL(/^https?:\/\//i.test(address) ? address : `http://${address}`).href, source: location.href, method: 'publisher_text', text: address.slice(0, 300), verified_identity: false}); } catch (_) {}
+  }
   for (const el of document.querySelectorAll('meta[http-equiv]')) {
     if (el.getAttribute('http-equiv').toLowerCase() === 'onion-location') {
       try { claims.push({url: new URL(el.content, location.href).href, source: location.href, method: 'onion_location_meta', verified_identity: false}); } catch (_) {}

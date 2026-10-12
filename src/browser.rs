@@ -27,6 +27,7 @@ pub struct Session {
     tabs: BTreeMap<String, String>,
     next_tab: u64,
     no_tabs: bool,
+    failed_pages: HashMap<String, String>,
 }
 impl Session {
     pub async fn launch(config: &Config, name: &str, headed: bool) -> Result<Self> {
@@ -43,6 +44,7 @@ impl Session {
             tabs: BTreeMap::new(),
             next_tab: 1,
             no_tabs: false,
+            failed_pages: HashMap::new(),
         })
     }
     fn invalidate(&mut self) {
@@ -59,11 +61,23 @@ impl Session {
         if self.no_tabs {
             bail!("session_has_no_tabs: close this session and open a new one");
         }
+        self.navigate("url", json!({"url": url}), url).await
+    }
+    async fn navigate(&mut self, endpoint: &str, body: Value, destination: &str) -> Result<Value> {
         self.invalidate();
+        let handle = self.runtime.call("GET", "window", None).await?;
+        let handle = handle.as_str().context("invalid_tab_response")?.to_owned();
+        // Keep the tab blocked even if navigation is cancelled or leaves the old
+        // document visible. That document is not evidence the target responded.
+        self.failed_pages
+            .insert(handle.clone(), destination.to_owned());
         self.runtime
-            .call("POST", "url", Some(json!({"url": url})))
-            .await?;
-        self.info().await
+            .call("POST", endpoint, Some(body))
+            .await
+            .with_context(|| format!("navigation_failed: {destination} did not finish loading; page tools are blocked in this tab until a navigation succeeds"))?;
+        let info = self.info().await?;
+        self.failed_pages.remove(&handle);
+        Ok(info)
     }
     async fn element(&self, target: &str) -> Result<String> {
         let value = if target.starts_with('@') {
@@ -104,6 +118,8 @@ impl Session {
         let handles = handles.as_array().context("invalid_tab_response")?;
         self.tabs
             .retain(|_, handle| handles.iter().any(|h| h.as_str() == Some(handle)));
+        self.failed_pages
+            .retain(|handle, _| handles.iter().any(|h| h.as_str() == Some(handle)));
         for handle in handles.iter().filter_map(Value::as_str) {
             if !self.tabs.values().any(|h| h == handle) {
                 self.tabs
@@ -120,6 +136,25 @@ impl Session {
         result
     }
     async fn execute_inner(&mut self, action: Action) -> Result<Value> {
+        if matches!(
+            action,
+            Action::BrowserRead(_)
+                | Action::BrowserSnapshot(_)
+                | Action::BrowserLinks(_)
+                | Action::BrowserClick(_)
+                | Action::BrowserFill(_)
+                | Action::BrowserPress(_)
+                | Action::BrowserWait(_)
+                | Action::BrowserScreenshot(_)
+        ) && !self.failed_pages.is_empty()
+        {
+            let handle = self.runtime.call("GET", "window", None).await?;
+            if let Some(destination) = handle.as_str().and_then(|h| self.failed_pages.get(h)) {
+                bail!(
+                    "navigation_unconfirmed: {destination} did not finish loading; the previous page is not proof this target is active. Use browser_open for the desired URL, browser_navigate to recover, or browser_tabs to select another tab"
+                );
+            }
+        }
         match action {
             Action::BrowserOpen(a) => {
                 if a.headed != self.runtime.headed {
@@ -225,8 +260,7 @@ impl Session {
                     Navigation::Forward => "forward",
                     Navigation::Reload => "refresh",
                 };
-                self.runtime.call("POST", endpoint, Some(json!({}))).await?;
-                self.info().await
+                self.navigate(endpoint, json!({}), endpoint).await
             }
             Action::BrowserTabs(a) => {
                 if self.no_tabs {
@@ -335,7 +369,11 @@ impl Session {
                         r.get("method").cloned().unwrap_or(Value::Null).to_string(),
                     ))
                 });
-                Ok(json!({"claims": claims, "untrusted": true, "verified_identity": false}))
+                let truncated = claims.len() > a.limit;
+                claims.truncate(a.limit);
+                Ok(
+                    json!({"claims": claims, "source": self.info().await?["url"], "truncated": truncated, "limit": a.limit, "untrusted": true, "verified_identity": false}),
+                )
             }
             Action::TorStatus(_) => Ok(self.runtime.status().await),
             Action::SessionList(_) | Action::SessionClose(_) => bail!("internal_dispatch_error"),

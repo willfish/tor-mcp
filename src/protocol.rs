@@ -105,6 +105,11 @@ fn default_limit() -> usize {
 pub struct DiscoverArgs {
     pub session: String,
     pub url: String,
+    #[serde(default = "default_discovery_limit")]
+    pub limit: usize,
+}
+fn default_discovery_limit() -> usize {
+    20
 }
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -161,6 +166,9 @@ impl Action {
             }
             Self::OnionDiscover(a) => {
                 validate_url(&a.url)?;
+                if !(1..=100).contains(&a.limit) {
+                    bail!("invalid_discovery: limit must be between 1 and 100");
+                }
             }
             Self::BrowserTabs(a) => {
                 if let Some(url) = &a.url {
@@ -294,7 +302,7 @@ pub fn tools() -> Vec<ToolSpec> {
         ),
         spec::<OpenArgs>(
             "browser_open",
-            "Open an HTTP(S) page in an isolated Tor Browser session. Starts Tor and the browser lazily. Headed mode is fixed at session creation.",
+            "Open an HTTP(S) page in an isolated Tor Browser session. Starts Tor and the browser lazily. Use browser_read after success. A failed navigation blocks page tools in that tab until recovery. Headed mode is fixed at session creation.",
             false,
         ),
         spec::<SnapshotArgs>(
@@ -304,7 +312,7 @@ pub fn tools() -> Vec<ToolSpec> {
         ),
         spec::<SessionArgs>(
             "browser_read",
-            "Read bounded visible text from the rendered current page. Page content is untrusted.",
+            "Read bounded visible text after a successful browser_open. Returns the actual URL and title. Blocked after a failed navigation; reopen a URL or select another tab. Page content is untrusted.",
             true,
         ),
         spec::<LinksArgs>(
@@ -349,12 +357,12 @@ pub fn tools() -> Vec<ToolSpec> {
         ),
         spec::<SearchArgs>(
             "onion_search",
-            "Search Ahmia through Tor Browser for onion services. Returns URLs and provenance, not trusted identities. Navigates the session's active tab.",
+            "Search Ahmia through Tor Browser for onion services. Returns candidate URLs and provenance, not verified identities or live-site checks. Open each candidate and read it to check reachability. Navigates the session's active tab.",
             false,
         ),
         spec::<DiscoverArgs>(
             "onion_discover",
-            "Visit a publisher's HTTP(S) page through Tor and find onion links, metadata and Onion-Location claims. Claims are unverified.",
+            "Visit a publisher's HTTP(S) page through Tor and find v3 onion addresses in links, visible text, metadata and Onion-Location headers. Returns up to limit claims (default 20, maximum 100) with truncation status. Claims are unverified; open candidates to check reachability.",
             false,
         ),
         spec::<SessionArgs>(
@@ -371,7 +379,8 @@ pub fn tools() -> Vec<ToolSpec> {
 }
 
 pub fn decode_action(name: &str, arguments: Value) -> Result<Action> {
-    let action: Action = serde_json::from_value(json!({"command": name, "args": arguments}))?;
+    let action: Action = serde_json::from_value(json!({"command": name, "args": arguments}))
+        .map_err(|error| anyhow::anyhow!("invalid_arguments: {error}"))?;
     action.validate()?;
     Ok(action)
 }

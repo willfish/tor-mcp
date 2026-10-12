@@ -35,6 +35,7 @@ The following checks exercise the plain-language cases through a real MCP client
 ```sh
 cargo test --test mcp_acceptance mcp_discovery_is_lazy -- --ignored --nocapture
 cargo test --test mcp_acceptance local_onion_command_acceptance -- --ignored --nocapture
+cargo test --test mcp_acceptance navigation_recovery_and_text_discovery -- --ignored --nocapture
 # Requires a local display and reachable Ahmia:
 cargo test --test mcp_acceptance headed_and_live_search_acceptance -- --ignored --nocapture
 ```
@@ -56,6 +57,8 @@ Before browsing, list sessions. The list should be empty, and neither Tor nor To
 ## browser_open
 
 Open the first test page in a new headless session. See bootstrap progress on the server's diagnostic output, then receive the actual page URL and title. Open another page in the same session: it should reuse the browser. Try a file URL and an invalid onion address: both should fail before navigating. Open a fresh session with headed mode: a visible Tor Browser window should appear. Request a different mode for an existing session: get an explanation that a restart is needed, not silent state loss.
+
+Navigate to the fixture's `/slow` path to trigger a load timeout. The error must include a code and recovery advice. Reads, snapshots and interactions in that tab must fail with `navigation_unconfirmed`, not return the previous page. Select another healthy tab and read it successfully; reselect the failed tab and confirm it remains blocked. Open a working URL to recover.
 
 ## browser_snapshot
 
@@ -103,7 +106,7 @@ Search for a harmless topic such as independent journalism. Receive a bounded li
 
 ## onion_discover
 
-Open an organisation's official HTTPS page that you control and that publishes an onion link, meta tag, or Onion-Location header. Discover its onion counterpart and see the exact source of the claim. Repeat on a page that publishes no onion address and receive an empty result. Reject malformed onion addresses. Do not report a site's identity as verified just because an address has the right shape.
+Open an organisation's official HTTPS page that you control and that publishes an onion link, visible-text address, meta tag, or Onion-Location header. Discover its onion counterpart and see the exact source of the claim. Check that visible-text addresses retain `publisher_text` provenance and pass v3 checksum validation. Request `limit: 1` on a page with several claims and receive one claim with `truncated: true`; invalid limits must fail. Repeat on a page that publishes no onion address and receive an empty result. Reject malformed onion addresses. Do not report a site's identity as verified just because an address has the right shape.
 
 ## tor_status
 
