@@ -11,6 +11,10 @@ use std::{
 };
 use tokio::time::{sleep, timeout};
 
+#[cfg(test)]
+#[path = "browser_tests.rs"]
+mod tests;
+
 const PAGE: &str = include_str!("page.js");
 const ELEMENT_KEY: &str = "element-6066-11e4-a52e-4f735466cecf";
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
@@ -31,8 +35,11 @@ pub struct Session {
 }
 impl Session {
     pub async fn launch(config: &Config, name: &str, headed: bool) -> Result<Self> {
-        Ok(Self {
-            runtime: Runtime::launch(config, name, headed).await?,
+        Ok(Self::new(Runtime::launch(config, name, headed).await?))
+    }
+    fn new(runtime: Runtime) -> Self {
+        Self {
+            runtime,
             last_used: Instant::now(),
             nonce: format!(
                 "{}-{}",
@@ -45,7 +52,7 @@ impl Session {
             next_tab: 1,
             no_tabs: false,
             failed_pages: HashMap::new(),
-        })
+        }
     }
     fn invalidate(&mut self) {
         self.generation += 1;
@@ -63,14 +70,23 @@ impl Session {
         }
         self.navigate("url", json!({"url": url}), url).await
     }
-    async fn navigate(&mut self, endpoint: &str, body: Value, destination: &str) -> Result<Value> {
+    async fn begin_page_change(&mut self, operation: &str) -> Result<String> {
         self.invalidate();
         let handle = self.runtime.call("GET", "window", None).await?;
         let handle = handle.as_str().context("invalid_tab_response")?.to_owned();
-        // Keep the tab blocked even if navigation is cancelled or leaves the old
-        // document visible. That document is not evidence the target responded.
+        // Mark before dispatch so cancellation and transport errors also leave
+        // the tab blocked. Event handlers can navigate during any interaction.
         self.failed_pages
-            .insert(handle.clone(), destination.to_owned());
+            .insert(handle.clone(), operation.to_owned());
+        Ok(handle)
+    }
+    fn finish_interaction(&mut self, handle: &str, result: Result<Value>) -> Result<Value> {
+        let value = result.context("interaction_failed: outcome may be unknown; do not repeat the interaction; page tools are blocked in this tab until a navigation succeeds")?;
+        self.failed_pages.remove(handle);
+        Ok(value)
+    }
+    async fn navigate(&mut self, endpoint: &str, body: Value, destination: &str) -> Result<Value> {
+        let handle = self.begin_page_change(destination).await?;
         self.runtime
             .call("POST", endpoint, Some(body))
             .await
@@ -151,7 +167,7 @@ impl Session {
             let handle = self.runtime.call("GET", "window", None).await?;
             if let Some(destination) = handle.as_str().and_then(|h| self.failed_pages.get(h)) {
                 bail!(
-                    "navigation_unconfirmed: {destination} did not finish loading; the previous page is not proof this target is active. Use browser_open for the desired URL, browser_navigate to recover, or browser_tabs to select another tab"
+                    "navigation_unconfirmed: {destination} did not complete; the previous page is not proof of the requested outcome. Use browser_open for the desired URL, browser_navigate to recover, or browser_tabs to select another tab"
                 );
             }
         }
@@ -208,28 +224,37 @@ impl Session {
                 if let Some(href) = href.as_str() {
                     validate_url(href)?;
                 }
-                self.invalidate();
-                self.runtime
-                    .call("POST", &format!("element/{element}/click"), Some(json!({})))
-                    .await?;
-                self.info().await
+                let handle = self.begin_page_change("browser_click").await?;
+                let result = async {
+                    self.runtime
+                        .call("POST", &format!("element/{element}/click"), Some(json!({})))
+                        .await?;
+                    self.info().await
+                }
+                .await;
+                self.finish_interaction(&handle, result)
             }
             Action::BrowserFill(a) => {
                 let element = self.element(&a.target).await?;
-                self.invalidate();
+                self.runtime
+                    .script(PAGE, json!(["fill_check", {ELEMENT_KEY: element}]))
+                    .await?;
+                let handle = self.begin_page_change("browser_fill").await?;
                 // WebDriver send-keys interprets text as local filenames for a
                 // file input. DOM value assignment cannot attach files, even if
                 // the page changes the input type during focus/input events.
-                self.runtime
+                let result = self
+                    .runtime
                     .script(PAGE, json!(["fill", {ELEMENT_KEY: element}, a.text]))
-                    .await
+                    .await;
+                self.finish_interaction(&handle, result)
             }
             Action::BrowserPress(a) => {
                 let key = key_code(&a.key)?;
-                self.invalidate();
+                let handle = self.begin_page_change("browser_press").await?;
                 let result = self.runtime.call("POST", "actions", Some(json!({"actions":[{"type":"key","id":"keyboard","actions":[{"type":"keyDown","value":key},{"type":"keyUp","value":key}]}]}))).await;
-                let _ = self.runtime.call("DELETE", "actions", None).await;
-                result?;
+                let release = self.runtime.call("DELETE", "actions", None).await;
+                self.finish_interaction(&handle, result.and(release))?;
                 Ok(json!({"pressed": a.key}))
             }
             Action::BrowserWait(a) => timeout(Duration::from_millis(a.timeout_ms), async {
@@ -254,7 +279,6 @@ impl Session {
                 Ok(json!({"mime_type": "image/png", "base64": image, "untrusted": true}))
             }
             Action::BrowserNavigate(a) => {
-                self.invalidate();
                 let endpoint = match a.action {
                     Navigation::Back => "back",
                     Navigation::Forward => "forward",

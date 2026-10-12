@@ -196,6 +196,9 @@ impl Manager {
 
 pub async fn serve(config: Config) -> Result<()> {
     config.prepare()?;
+    // Hold ownership for the entire lifetime, including socket removal. The
+    // CLI startup lock alone does not cover foreground `daemon` invocations.
+    let _ownership = daemon_lock(&config.root)?;
     let socket = config.root.join("daemon.socket");
     if socket.exists() {
         if UnixStream::connect(&socket).await.is_ok() {
@@ -236,6 +239,19 @@ pub async fn serve(config: Config) -> Result<()> {
     while jobs.join_next().await.is_some() {}
     manager.close_all().await;
     Ok(())
+}
+fn daemon_lock(root: &Path) -> Result<fs::File> {
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .mode(0o600)
+        .open(root.join("daemon.lock"))?;
+    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        return Err(std::io::Error::last_os_error())
+            .context("daemon_already_running: cannot acquire daemon ownership");
+    }
+    Ok(lock)
 }
 struct SocketGuard(std::path::PathBuf);
 impl Drop for SocketGuard {
@@ -385,4 +401,18 @@ async fn start_daemon(config: &Config, socket: &Path) -> Result<()> {
     // Do not kill a daemon when a short-lived CLI invocation exits.
     drop(lock);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daemon_ownership_is_exclusive_and_released_on_drop() {
+        let temp = tempfile::tempdir().unwrap();
+        let owner = daemon_lock(temp.path()).unwrap();
+        assert!(daemon_lock(temp.path()).is_err());
+        drop(owner);
+        let _next_owner = daemon_lock(temp.path()).unwrap();
+    }
 }

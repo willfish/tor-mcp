@@ -18,6 +18,12 @@
         src = pkgs.lib.cleanSource self;
         cargoLock.lockFile = ./Cargo.lock;
         nativeBuildInputs = [ pkgs.makeWrapper ];
+        nativeCheckInputs = [ pkgs.nodejs ] ++ runtime;
+        preCheck = ''
+          export TOR_MCP_BINARY=${pkgs.tor-browser}/bin/tor-browser
+          export TOR_MCP_BUNDLE=${pkgs.tor-browser}/share/tor-browser
+          node --test tests/page.test.cjs
+        '';
         postInstall = ''
           wrapProgram $out/bin/tor-mcp \
             --prefix PATH : ${pkgs.lib.makeBinPath runtime} \
@@ -48,6 +54,7 @@
           pkgs.clippy
           pkgs.nixfmt
           pkgs.pkg-config
+          pkgs.nodejs
         ]
         ++ runtime;
         TOR_MCP_BINARY = "${pkgs.tor-browser}/bin/tor-browser";

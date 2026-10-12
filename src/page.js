@@ -9,10 +9,12 @@ if (kind === 'read') {
 if (kind === 'links') {
   return [...document.querySelectorAll('a[href]')].slice(0, 500).map(el => ({text: name(el).slice(0, 300), url: el.href, source: location.href, untrusted: true}));
 }
-if (kind === 'fill') {
+if (kind === 'fill' || kind === 'fill_check') {
   const el = arguments[1], text = arguments[2];
   if (el.matches('input[type=file]')) throw new Error('upload_disabled: file inputs cannot be filled');
   if (el.disabled || el.readOnly || el.matches('input[type=checkbox],input[type=radio],input[type=button],input[type=submit],input[type=reset],input[type=image],input[type=hidden]')) throw new Error('fill_target_not_editable');
+  if (el.localName !== 'input' && el.localName !== 'textarea' && !el.isContentEditable) throw new Error('fill_target_not_editable');
+  if (kind === 'fill_check') return null;
   el.focus();
   if (el.localName === 'input' || el.localName === 'textarea') {
     const prototype = el.localName === 'input' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
@@ -51,15 +53,17 @@ if (kind === 'search') {
 if (kind === 'snapshot') {
   const interactive = arguments[1];
   const selector = 'a[href],button,input:not([type=hidden]),textarea,select,[role=button],[role=link],[contenteditable=true],h1,h2,h3,h4,p,li,label';
-  const all = [...document.querySelectorAll(selector)].filter(visible);
   const rows = [];
-  for (const el of all) {
+  let truncated = false;
+  for (const el of document.querySelectorAll(selector)) {
+    if (!visible(el)) continue;
     const actionable = el.matches('a[href],button,input,textarea,select,[role=button],[role=link],[contenteditable=true]');
     if (interactive && !actionable) continue;
-    if (rows.length >= 200) break;
-    rows.push({role: el.getAttribute('role') || el.localName, name: name(el).slice(0, 300), value: el.matches('input,textarea,select') && !el.matches('input[type=password]') ? el.value : undefined, element: actionable ? el : undefined, signature: actionable ? el.outerHTML.slice(0, 2000) : undefined});
+    if (rows.length >= 200) { truncated = true; break; }
+    const value = el.matches('input,textarea,select') && !el.matches('input[type=password]') ? el.value : undefined;
+    rows.push({role: (el.getAttribute('role') || el.localName).slice(0, 300), name: name(el).slice(0, 300), value: value?.slice(0, 1000), value_truncated: value !== undefined && value.length > 1000, element: actionable ? el : undefined, signature: actionable ? el.outerHTML.slice(0, 2000) : undefined});
   }
-  return {url: location.href, title: document.title, nodes: rows, truncated: rows.length >= 200, untrusted: true, snapshot_kind: 'dom_semantics'};
+  return {url: location.href, title: document.title, nodes: rows, truncated, untrusted: true, snapshot_kind: 'dom_semantics'};
 }
 if (kind === 'discover') {
   const claims = [...document.querySelectorAll('a[href]')].slice(0, 500).map(el => ({url: el.href, source: location.href, method: 'publisher_link', text: name(el).slice(0, 300), verified_identity: false}));

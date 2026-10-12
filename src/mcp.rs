@@ -118,6 +118,9 @@ pub fn error_payload(tool: &str, error: &anyhow::Error) -> Value {
         "navigation_failed" | "navigation_unconfirmed" => {
             "Do not mark the target active or read the previous document. Skip the target, open a desired URL with browser_open, or select another tab with browser_tabs. A timeout or resolution failure does not prove the service is offline."
         }
+        "interaction_failed" => {
+            "The interaction may have taken effect. Do not repeat it automatically. Page tools in that tab are blocked; recover with a deliberate browser_open or select another tab. Check any consequential outcome independently before retrying."
+        }
         "tor_bootstrap_timeout" => {
             "Tor was not ready. Check tor_status. A later browser_open may retry startup; never use a direct-network fallback."
         }

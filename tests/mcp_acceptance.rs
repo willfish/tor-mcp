@@ -1,5 +1,5 @@
 //! Runnable evidence for the plain-language cases in docs/manual-acceptance.md.
-//! Ignored by default: these cases launch the explicitly requested Tor runtime.
+//! Live browsing cases are ignored; discovery and configuration checks run offline.
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::{collections::HashMap, process::Stdio, time::Duration};
@@ -128,7 +128,6 @@ fn data(response: Value) -> Result<Value> {
 }
 
 #[tokio::test]
-#[ignore = "manual runtime acceptance; run inside the Nix development environment"]
 async fn mcp_discovery_is_lazy() -> Result<()> {
     let mut client = Client::start().await?;
     let id = client.send("tools/list", json!({})).await?;
@@ -147,6 +146,19 @@ async fn mcp_discovery_is_lazy() -> Result<()> {
         false
     );
     assert!(!client.root.path().join("tor-mcp/lazy").exists());
+    let duplicate = Command::new(env!("CARGO_BIN_EXE_tor-mcp"))
+        .arg("daemon")
+        .env("XDG_RUNTIME_DIR", client.root.path())
+        .env("XDG_STATE_HOME", client.root.path().join("state"))
+        .output()
+        .await?;
+    assert!(!duplicate.status.success());
+    assert!(String::from_utf8_lossy(&duplicate.stderr).contains("daemon_already_running"));
+    // A rejected foreground start must not remove the live daemon's socket.
+    assert_eq!(
+        client.data("session_list", json!({})).await?["sessions"],
+        json!([])
+    );
     assert_eq!(
         client
             .data("session_close", json!({"session":"lazy"}))
@@ -154,6 +166,36 @@ async fn mcp_discovery_is_lazy() -> Result<()> {
         false
     );
     client.finish().await
+}
+
+#[tokio::test]
+async fn explicit_browser_path_does_not_require_tor_browser_on_path() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let bin = temp.path().join("bin");
+    std::fs::create_dir(&bin)?;
+    // Runtime resolution can find the other commands, but not tor-browser.
+    // None of these placeholders should ever execute during shutdown.
+    for name in ["geckodriver", "tor", "bwrap", "explicit-browser"] {
+        std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_tor-mcp"), bin.join(name))?;
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_tor-mcp"))
+        .arg("shutdown")
+        .env("PATH", &bin)
+        .env("TOR_MCP_BINARY", bin.join("explicit-browser"))
+        .env("TOR_MCP_BUNDLE", temp.path().join("bundle"))
+        .env("XDG_RUNTIME_DIR", temp.path())
+        .env("XDG_STATE_HOME", temp.path().join("state"))
+        .output()
+        .await?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(result["was_running"], false);
+    assert!(!temp.path().join("tor-mcp/daemon.socket").exists());
+    Ok(())
 }
 
 #[tokio::test]

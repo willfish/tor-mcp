@@ -9,8 +9,7 @@ This is an initial implementation, not complete agent-browser parity or a promis
 Requires x86-64 Linux, Nix, and permission to create unprivileged user namespaces with bubblewrap. Headed mode also requires a local Wayland or X11 display. Unsupported containment fails closed.
 
 ```sh
-# This repository is private. GitHub SSH access is required.
-nix profile install 'git+ssh://git@github.com/willfish/tor-mcp?ref=master'
+nix profile install github:willfish/tor-mcp/master
 
 # Alternatively, from a checkout:
 nix run . -- --help
@@ -39,7 +38,7 @@ tor-mcp shutdown
 
 Use `--json` for compact JSON. Without it, output is pretty-printed JSON. `fill`, `press`, `wait`, `tabs` and `navigate` provide the other core interactions. Run `tools` for all MCP names and their argument schemas, or `call <tool-name> '<JSON arguments>'` to invoke one directly.
 
-References belong to one session and one snapshot. Take a new snapshot after an interaction or navigation. CSS selectors are also accepted. Snapshots describe bounded DOM semantics, not Firefox's complete native accessibility tree. Password values are omitted from snapshots.
+References belong to one session and one snapshot. Take a new snapshot after an interaction or navigation. CSS selectors are also accepted. Snapshots describe bounded DOM semantics, not Firefox's complete native accessibility tree. They include at most 200 nodes and 1,000 characters per field value, with `value_truncated` on clipped values. Password values are omitted from snapshots.
 
 Screenshots are viewport PNGs. The CLI writes only to a new destination file; MCP returns image content. Display mode is fixed when a session is created. Close and reopen to change it.
 
@@ -62,7 +61,7 @@ Every browsing tool requires an explicit session name. Give each agent its own n
 
 The [manual acceptance cases](docs/manual-acceptance.md) describe every exposed tool. Commands in one session are serialized; separate sessions can run concurrently. Ahmia search and publisher discovery navigate the active tab of their session. Search results and publisher claims include provenance, not verified organisational identities. Search uses Ahmia's normal form fields and recognizes its results page instead of treating arbitrary onion links as search results. Publisher discovery also finds addresses written as visible text. It returns at most 20 claims by default, with `truncated` when more are available; set `limit` (or CLI `discover --limit`) up to 100 for a larger list.
 
-For research, discover candidates, then use `browser_open` followed by `browser_read` to check each one. Listings are not live-site checks. A failed navigation blocks page reads, snapshots and interactions in that tab, so a previous document cannot be mistaken for the requested site. Recover with a successful open/navigation or select another tab; other tabs remain usable. MCP errors retain `isError` and return JSON with `error.code`, `error.message` and `error.next_action`. Do not automatically retry consequential interactions. Tor failures never trigger direct-network fallback. Sensitive submissions require an appropriate separately reviewed browser setup; this controller does not bypass sites' browser-security warnings.
+For research, discover candidates, then use `browser_open` followed by `browser_read` to check each one. Listings are not live-site checks. A failed navigation or uncertain dispatched interaction blocks page reads, snapshots and interactions in that tab, so a previous document cannot be mistaken for a successful outcome. Recover with a successful open/navigation or select another tab; other tabs remain usable. An `interaction_failed` error does not mean the action had no effect. Check consequential outcomes independently before retrying. MCP errors retain `isError` and return JSON with `error.code`, `error.message` and `error.next_action`. Do not automatically retry consequential interactions. Tor failures never trigger direct-network fallback. Sensitive submissions require an appropriate separately reviewed browser setup; this controller does not bypass sites' browser-security warnings.
 
 ## Runtime and boundaries
 
@@ -93,7 +92,8 @@ nix develop
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all-targets
+node --test tests/page.test.cjs
 nix flake check
 ```
 
-With direnv, use `direnv allow` and `direnv exec . <command>` instead. Unit tests run without browsing. Runtime acceptance tests are ignored by default because they need live Tor, a harmless fixture, or a desktop display. The manual acceptance document includes fixture setup and the explicit commands to run them.
+With direnv, use `direnv allow` and `direnv exec . <command>` instead. Unit tests, page-extraction regressions and the MCP discovery smoke test run without browsing. The Nix check runs the Rust and JavaScript tests. Live browsing acceptance tests are ignored by default because they need Tor, a harmless fixture, or a desktop display. The manual acceptance document includes fixture setup and the explicit commands to run them.

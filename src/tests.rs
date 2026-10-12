@@ -278,6 +278,25 @@ fn runtime_rejects_symlink_parent() {
     assert!(config.prepare().is_err());
 }
 #[test]
+fn runtime_path_budget_includes_the_longest_session_socket() {
+    let temp = tempfile::tempdir().unwrap();
+    let name = "s".repeat(32);
+    let suffix = PathBuf::from(&name).join("webdriver.socket");
+    let max_root = 107 - suffix.as_os_str().len() - 1;
+    let padding = max_root - temp.path().as_os_str().len() - 1;
+    let valid = config(temp.path().join("r".repeat(padding)));
+    valid.prepare().unwrap();
+    let session = valid.root.join(&name);
+    private_dir(&session).unwrap();
+    let socket = session.join("webdriver.socket");
+    assert_eq!(socket.as_os_str().len(), 107);
+    let _listener = std::os::unix::net::UnixListener::bind(socket).unwrap();
+
+    let invalid = config(temp.path().join("r".repeat(padding + 1)));
+    let error = invalid.prepare().unwrap_err();
+    assert!(error.to_string().starts_with("runtime_path_too_long:"));
+}
+#[test]
 fn session_capacity_is_bounded() {
     let temp = tempfile::tempdir().unwrap();
     let mut config = config(temp.path().join("runtime"));
@@ -356,6 +375,7 @@ fn mcp_errors_include_codes_and_safe_recovery_advice() {
     for (code, tool, advice) in [
         ("navigation_failed", "browser_open", "Do not mark"),
         ("navigation_unconfirmed", "browser_read", "Do not mark"),
+        ("interaction_failed", "browser_click", "Do not repeat"),
         ("stale_reference", "browser_click", "fresh browser_snapshot"),
         ("session_not_running", "browser_read", "browser_open"),
         ("session_capacity", "browser_open", "that you own"),

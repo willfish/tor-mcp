@@ -42,7 +42,10 @@ impl Config {
             .join("tor-mcp");
         Ok(Self {
             root, state,
-            browser: std::env::var_os("TOR_MCP_BINARY").map(PathBuf::from).unwrap_or(resolve("tor-browser")?),
+            browser: match std::env::var_os("TOR_MCP_BINARY") {
+                Some(path) => PathBuf::from(path),
+                None => resolve("tor-browser")?,
+            },
             bundle: std::env::var_os("TOR_MCP_BUNDLE").map(PathBuf::from).context("TOR_MCP_BUNDLE must identify the packaged Tor Browser directory; use the Nix flake")?,
             geckodriver: resolve("geckodriver")?, tor: resolve("tor")?, bwrap: resolve("bwrap")?,
             max_sessions: env_number("TOR_MCP_MAX_SESSIONS", 4)?.try_into()?,
@@ -60,7 +63,16 @@ impl Config {
         )?;
         private_dir(&self.root)?;
         private_dir(&self.state)?;
-        if self.root.join("daemon.socket").as_os_str().len() > 100 {
+        // Linux sockaddr_un allows 107 pathname bytes plus the NUL terminator.
+        // Account for the longest allowed session name, not just daemon.socket.
+        if self
+            .root
+            .join("s".repeat(32))
+            .join("webdriver.socket")
+            .as_os_str()
+            .len()
+            > 107
+        {
             bail!("runtime_path_too_long: choose a shorter XDG_RUNTIME_DIR");
         }
         if self.max_sessions == 0 || self.max_sessions > 32 {

@@ -33,7 +33,8 @@ Check the private fixture log for Tor bootstrap completion. A hostname file or 1
 The following checks exercise the plain-language cases through a real MCP client:
 
 ```sh
-cargo test --test mcp_acceptance mcp_discovery_is_lazy -- --ignored --nocapture
+# Offline smoke test, also included in the default test suite:
+cargo test --test mcp_acceptance mcp_discovery_is_lazy -- --nocapture
 cargo test --test mcp_acceptance local_onion_command_acceptance -- --ignored --nocapture
 cargo test --test mcp_acceptance navigation_recovery_and_text_discovery -- --ignored --nocapture
 # Requires a local display and reachable Ahmia:
@@ -62,7 +63,7 @@ Navigate to the fixture's `/slow` path to trigger a load timeout. The error must
 
 ## browser_snapshot
 
-Take a snapshot of the test page. Read the heading, field label, button and link, with usable references for interactive elements. Request an interactive-only snapshot and check that unnecessary prose is omitted. Password fields may have labels and references, but their values must not appear. Navigate to the second page and try an old reference: receive a stale-reference error, never an action on an unrelated element. References from another session must not work.
+Take a snapshot of the test page. Read the heading, field label, button and link, with usable references for interactive elements. Request an interactive-only snapshot and check that unnecessary prose is omitted. Password fields may have labels and references, but their values must not appear. Field values longer than 1,000 characters must be clipped with `value_truncated: true`. A snapshot containing exactly 200 matching nodes is not truncated unless more matching nodes exist. Navigate to the second page and try an old reference: receive a stale-reference error, never an action on an unrelated element. References from another session must not work.
 
 ## browser_read
 
@@ -74,7 +75,7 @@ List links on the test page. Each result should include link text and the comple
 
 ## browser_click
 
-Take a fresh snapshot and click the test button by its reference. Verify the changed message with a new read or snapshot. Click the page link and verify the second page's title. Try an absent CSS selector: get a clear error, without clicking something else. Old references should stop working after an interaction invalidates the snapshot.
+Take a fresh snapshot and click the test button by its reference. Verify the changed message with a new read or snapshot. Click the page link and verify the second page's title. Try an absent CSS selector: get a clear error, without clicking something else. Old references should stop working after an interaction invalidates the snapshot. A click that times out during navigation must return `interaction_failed`; page tools in that tab must then return `navigation_unconfirmed` until a successful navigation. Failed dispatched fills and key presses have the same guard because their event handlers can navigate or submit. Do not retry a consequential action merely because it returned an error.
 
 ## browser_fill
 
