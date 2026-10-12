@@ -23,16 +23,16 @@ impl Client {
     }
     async fn start_with_idle(idle_seconds: u64) -> Result<Self> {
         let root = tempfile::tempdir()?;
-        let mut child = Command::new(env!("CARGO_BIN_EXE_onion-browser"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_tor-mcp"))
             .arg("mcp")
             .env("XDG_RUNTIME_DIR", root.path())
             .env(
                 "XDG_STATE_HOME",
-                std::env::var_os("ONION_BROWSER_TEST_STATE_HOME")
+                std::env::var_os("TOR_MCP_TEST_STATE_HOME")
                     .map(std::path::PathBuf::from)
                     .unwrap_or_else(|| root.path().join("state")),
             )
-            .env("ONION_BROWSER_IDLE_SECONDS", idle_seconds.to_string())
+            .env("TOR_MCP_IDLE_SECONDS", idle_seconds.to_string())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -94,7 +94,7 @@ impl Client {
         data(self.tool(name, args).await?)
     }
     async fn finish(mut self) -> Result<()> {
-        let output = Command::new(env!("CARGO_BIN_EXE_onion-browser"))
+        let output = Command::new(env!("CARGO_BIN_EXE_tor-mcp"))
             .arg("shutdown")
             .env("XDG_RUNTIME_DIR", self.root.path())
             .env("XDG_STATE_HOME", self.root.path().join("state"))
@@ -102,19 +102,13 @@ impl Client {
             .await?;
         assert!(output.status.success());
         self.child.kill().await?;
-        assert!(
-            !self
-                .root
-                .path()
-                .join("onion-browser/daemon.socket")
-                .exists()
-        );
+        assert!(!self.root.path().join("tor-mcp/daemon.socket").exists());
         Ok(())
     }
 }
 impl Drop for Client {
     fn drop(&mut self) {
-        let _ = std::process::Command::new(env!("CARGO_BIN_EXE_onion-browser"))
+        let _ = std::process::Command::new(env!("CARGO_BIN_EXE_tor-mcp"))
             .arg("shutdown")
             .env("XDG_RUNTIME_DIR", self.root.path())
             .env("XDG_STATE_HOME", self.root.path().join("state"))
@@ -141,7 +135,7 @@ async fn mcp_discovery_is_lazy() -> Result<()> {
     let tools = client.receive(id).await?;
     assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 16);
     assert!(
-        !client.root.path().join("onion-browser").exists(),
+        !client.root.path().join("tor-mcp").exists(),
         "initialization and tools/list must not even start the daemon"
     );
     assert_eq!(
@@ -152,7 +146,7 @@ async fn mcp_discovery_is_lazy() -> Result<()> {
         client.data("tor_status", json!({"session":"lazy"})).await?["running"],
         false
     );
-    assert!(!client.root.path().join("onion-browser/lazy").exists());
+    assert!(!client.root.path().join("tor-mcp/lazy").exists());
     assert_eq!(
         client
             .data("session_close", json!({"session":"lazy"}))
@@ -222,10 +216,10 @@ async fn headed_and_live_search_acceptance() -> Result<()> {
 }
 
 #[tokio::test]
-#[ignore = "requires a harmless local onion fixture; set ONION_BROWSER_TEST_URL"]
+#[ignore = "requires a harmless local onion fixture; set TOR_MCP_TEST_URL"]
 async fn local_onion_command_acceptance() -> Result<()> {
-    let url = std::env::var("ONION_BROWSER_TEST_URL")
-        .context("set ONION_BROWSER_TEST_URL to the fixture /one URL")?;
+    let url = std::env::var("TOR_MCP_TEST_URL")
+        .context("set TOR_MCP_TEST_URL to the fixture /one URL")?;
     let mut client = Client::start().await?;
     let one = client
         .send(
@@ -462,7 +456,7 @@ async fn local_onion_command_acceptance() -> Result<()> {
             .await?["closed"],
         true
     );
-    assert!(!client.root.path().join("onion-browser/one").exists());
+    assert!(!client.root.path().join("tor-mcp/one").exists());
     assert!(
         client
             .data("browser_read", json!({"session":"two"}))
@@ -526,7 +520,7 @@ async fn local_onion_command_acceptance() -> Result<()> {
     let reopened = idle.data("tor_status", json!({"session":"idle"})).await?;
     tokio::time::sleep(Duration::from_secs(5)).await;
     assert!(
-        !idle.root.path().join("onion-browser/idle").exists(),
+        !idle.root.path().join("tor-mcp/idle").exists(),
         "idle profile survived"
     );
     for key in ["tor_pid", "sandbox_pid"] {

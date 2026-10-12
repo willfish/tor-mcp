@@ -33,21 +33,21 @@ impl Config {
         let runtime = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| {
-                PathBuf::from(format!("/tmp/onion-browser-{}", unsafe { libc::geteuid() }))
+                PathBuf::from(format!("/tmp/tor-mcp-{}", unsafe { libc::geteuid() }))
             });
-        let root = runtime.join("onion-browser");
+        let root = runtime.join("tor-mcp");
         let state = std::env::var_os("XDG_STATE_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(home).join(".local/state"))
-            .join("onion-browser");
+            .join("tor-mcp");
         Ok(Self {
             root, state,
-            browser: std::env::var_os("ONION_BROWSER_BINARY").map(PathBuf::from).unwrap_or(resolve("tor-browser")?),
-            bundle: std::env::var_os("ONION_BROWSER_BUNDLE").map(PathBuf::from).context("ONION_BROWSER_BUNDLE must identify the packaged Tor Browser directory; use the Nix flake")?,
+            browser: std::env::var_os("TOR_MCP_BINARY").map(PathBuf::from).unwrap_or(resolve("tor-browser")?),
+            bundle: std::env::var_os("TOR_MCP_BUNDLE").map(PathBuf::from).context("TOR_MCP_BUNDLE must identify the packaged Tor Browser directory; use the Nix flake")?,
             geckodriver: resolve("geckodriver")?, tor: resolve("tor")?, bwrap: resolve("bwrap")?,
-            max_sessions: env_number("ONION_BROWSER_MAX_SESSIONS", 4)?.try_into()?,
-            idle_seconds: env_number("ONION_BROWSER_IDLE_SECONDS", 600)?,
-            bootstrap_seconds: env_number("ONION_BROWSER_BOOTSTRAP_SECONDS", 180)?,
+            max_sessions: env_number("TOR_MCP_MAX_SESSIONS", 4)?.try_into()?,
+            idle_seconds: env_number("TOR_MCP_IDLE_SECONDS", 600)?,
+            bootstrap_seconds: env_number("TOR_MCP_BOOTSTRAP_SECONDS", 180)?,
         })
     }
     pub fn prepare(&self) -> Result<()> {
@@ -64,7 +64,7 @@ impl Config {
             bail!("runtime_path_too_long: choose a shorter XDG_RUNTIME_DIR");
         }
         if self.max_sessions == 0 || self.max_sessions > 32 {
-            bail!("ONION_BROWSER_MAX_SESSIONS must be between 1 and 32");
+            bail!("TOR_MCP_MAX_SESSIONS must be between 1 and 32");
         }
         Ok(())
     }
@@ -423,7 +423,7 @@ pub fn sandbox_args(config: &Config, dir: &Path, headed: bool) -> Result<Vec<Str
         "/session".into(),
         "--ro-bind".into(),
         exe.display().to_string(),
-        "/onion-browser".into(),
+        "/tor-mcp".into(),
     ]);
     for file in ["/etc/passwd", "/etc/group"] {
         if Path::new(file).exists() {
@@ -515,7 +515,7 @@ pub fn sandbox_args(config: &Config, dir: &Path, headed: bool) -> Result<Vec<Str
     args.extend([
         "--chdir".into(),
         "/session".into(),
-        "/onion-browser".into(),
+        "/tor-mcp".into(),
         "internal-driver".into(),
         "--geckodriver".into(),
         config.geckodriver.display().to_string(),

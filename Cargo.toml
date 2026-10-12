@@ -1,10 +1,10 @@
 [package]
-name = "onion-browser"
+name = "tor-mcp"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
 description = "Lazy Tor Browser automation for AI agents"
-repository = "https://github.com/willfish/onion-browser"
+repository = "https://github.com/willfish/tor-mcp"
 
 [dependencies]
 anyhow = "1"

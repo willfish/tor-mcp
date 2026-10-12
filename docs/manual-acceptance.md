@@ -22,10 +22,10 @@ EOF
 tor -f "$work/torrc" > "$work/tor.log" 2>&1 &
 tor_pid=$!
 while ! test -s "$work/onion-service/hostname"; do sleep 1; done
-export ONION_BROWSER_FIXTURE_ONION=$(< "$work/onion-service/hostname")
+export TOR_MCP_FIXTURE_ONION=$(< "$work/onion-service/hostname")
 target/debug/examples/fixture > "$work/fixture.log" 2>&1 &
 fixture_pid=$!
-export ONION_BROWSER_TEST_URL="http://$ONION_BROWSER_FIXTURE_ONION/one"
+export TOR_MCP_TEST_URL="http://$TOR_MCP_FIXTURE_ONION/one"
 ```
 
 Check the private fixture log for Tor bootstrap completion. A hostname file or 100% bootstrap alone does not prove the onion descriptor has been published. Publication can take several minutes. Runtime tests should fail clearly if the fixture or Tor is unavailable; do not count such a run as a pass.
@@ -39,7 +39,7 @@ cargo test --test mcp_acceptance local_onion_command_acceptance -- --ignored --n
 cargo test --test mcp_acceptance headed_and_live_search_acceptance -- --ignored --nocapture
 ```
 
-For repeated live runs, optionally set `ONION_BROWSER_TEST_STATE_HOME` to a dedicated absolute private directory, such as `$PWD/manual-results/client-state`. This retains only test Tor state between runs, avoiding unnecessary guard and directory-cache churn; disposable browser profiles still disappear. Do not point it at personal Tor state. Without this setting, tests use fresh temporary state.
+For repeated live runs, optionally set `TOR_MCP_TEST_STATE_HOME` to a dedicated absolute private directory, such as `$PWD/manual-results/client-state`. This retains only test Tor state between runs, avoiding unnecessary guard and directory-cache churn; disposable browser profiles still disappear. Do not point it at personal Tor state. Without this setting, tests use fresh temporary state.
 
 These are representative scripted acceptance exercises, not a substitute for every manual edge case below. After checking results, stop only the fixture processes and remove their disposable state:
 

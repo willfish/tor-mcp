@@ -8,8 +8,8 @@ use tokio::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let port = std::env::var("ONION_BROWSER_FIXTURE_PORT").unwrap_or_else(|_| "8765".into());
-    let onion = std::env::var("ONION_BROWSER_FIXTURE_ONION")?;
+    let port = std::env::var("TOR_MCP_FIXTURE_PORT").unwrap_or_else(|_| "8765".into());
+    let onion = std::env::var("TOR_MCP_FIXTURE_ONION")?;
     let listener = TcpListener::bind(format!("127.0.0.1:{port}")).await?;
     println!("Fixture listening on 127.0.0.1:{port}");
     loop {

@@ -1,4 +1,4 @@
-# onion-browser
+# tor-mcp
 
 A Linux-first Rust CLI and MCP server for automating actual Tor Browser. It starts Tor and the browser only when needed, keeps named sessions independent, and supports headless or headed browsing.
 
@@ -10,7 +10,7 @@ Requires x86-64 Linux, Nix, and permission to create unprivileged user namespace
 
 ```sh
 # This repository is private. GitHub SSH access is required.
-nix profile install 'git+ssh://git@github.com/willfish/onion-browser?ref=master'
+nix profile install 'git+ssh://git@github.com/willfish/tor-mcp?ref=master'
 
 # Alternatively, from a checkout:
 nix run . -- --help
@@ -21,20 +21,20 @@ The pinned flake includes Tor Browser, Tor, geckodriver and bubblewrap. It does 
 ## CLI
 
 ```sh
-onion-browser --session research open https://example.com/
-onion-browser --session research snapshot --interactive
-onion-browser --session research click '<reference from the snapshot>'
-onion-browser --session research read
-onion-browser --session research links --onion-only
-onion-browser --session research screenshot page.png
-onion-browser --session research search 'independent journalism' --limit 5
-onion-browser --session research discover https://example.com/
-onion-browser --session research tor-status
-onion-browser --session research close
+tor-mcp --session research open https://example.com/
+tor-mcp --session research snapshot --interactive
+tor-mcp --session research click '<reference from the snapshot>'
+tor-mcp --session research read
+tor-mcp --session research links --onion-only
+tor-mcp --session research screenshot page.png
+tor-mcp --session research search 'independent journalism' --limit 5
+tor-mcp --session research discover https://example.com/
+tor-mcp --session research tor-status
+tor-mcp --session research close
 
-onion-browser --session review open https://example.com/ --headed
-onion-browser sessions
-onion-browser shutdown
+tor-mcp --session review open https://example.com/ --headed
+tor-mcp sessions
+tor-mcp shutdown
 ```
 
 Use `--json` for compact JSON. Without it, output is pretty-printed JSON. `fill`, `press`, `wait`, `tabs` and `navigate` provide the other core interactions. Run `tools` for all MCP names and their argument schemas, or `call <tool-name> '<JSON arguments>'` to invoke one directly.
@@ -50,8 +50,8 @@ Install the executable, then configure your MCP client:
 ```json
 {
   "mcpServers": {
-    "onion-browser": {
-      "command": "onion-browser",
+    "tor-mcp": {
+      "command": "tor-mcp",
       "args": ["mcp"]
     }
   }
@@ -74,13 +74,13 @@ All page text, links and images are untrusted. The client must authorize consequ
 
 There are no public tools for arbitrary JavaScript evaluation, file upload, file download, raw Tor control, new identities or fingerprint-changing emulation. Browser download prompts are not acceptance to retrieve or open a file. Do not use interactive actions to circumvent those boundaries.
 
-Runtime files live under `$XDG_RUNTIME_DIR/onion-browser`, with a private temporary-directory fallback. Tor guard state lives under `$XDG_STATE_HOME/onion-browser/tor`, defaulting to `~/.local/state/onion-browser/tor`. Closing a session removes its browser profile, cookies and startup logs, but intentionally retains Tor state. Daemon diagnostics are in the private runtime directory's `daemon.log`.
+Runtime files live under `$XDG_RUNTIME_DIR/tor-mcp`, with a private temporary-directory fallback. Tor guard state lives under `$XDG_STATE_HOME/tor-mcp/tor`, defaulting to `~/.local/state/tor-mcp/tor`. Closing a session removes its browser profile, cookies and startup logs, but intentionally retains Tor state. Daemon diagnostics are in the private runtime directory's `daemon.log`.
 
 | Setting | Default |
 | --- | --- |
-| `ONION_BROWSER_MAX_SESSIONS` | 4, maximum 32 |
-| `ONION_BROWSER_IDLE_SECONDS` | 600; 0 disables headless idle cleanup |
-| `ONION_BROWSER_BOOTSTRAP_SECONDS` | 180 |
+| `TOR_MCP_MAX_SESSIONS` | 4, maximum 32 |
+| `TOR_MCP_IDLE_SECONDS` | 600; 0 disables headless idle cleanup |
+| `TOR_MCP_BOOTSTRAP_SECONDS` | 180 |
 
 Headed sessions remain until closed. `shutdown` waits for normal daemon cleanup. A forced daemon kill can leave private session directories behind; after checking that owned processes have stopped, remove stale directories or reopen and close the corresponding session. Profile deletion is not secure disk erasure. If rebuilding the development executable, shut down the old daemon before starting new sessions. Tor bootstrap and onion-service publication depend on live network availability; failures never enable a direct-network fallback.
 

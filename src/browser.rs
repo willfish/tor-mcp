@@ -296,7 +296,7 @@ impl Session {
                 let fresh = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)?
                     .as_millis();
-                self.open(&format!("https://ahmia.fi/?_onion_browser={fresh}"))
+                self.open(&format!("https://ahmia.fi/?_tor_mcp={fresh}"))
                     .await?;
                 let request = self
                     .runtime

@@ -13,23 +13,23 @@
         pkgs.bubblewrap
       ];
       package = pkgs.rustPlatform.buildRustPackage {
-        pname = "onion-browser";
+        pname = "tor-mcp";
         version = "0.1.0";
         src = pkgs.lib.cleanSource self;
         cargoLock.lockFile = ./Cargo.lock;
         nativeBuildInputs = [ pkgs.makeWrapper ];
         postInstall = ''
-          wrapProgram $out/bin/onion-browser \
+          wrapProgram $out/bin/tor-mcp \
             --prefix PATH : ${pkgs.lib.makeBinPath runtime} \
-            --set ONION_BROWSER_BINARY ${pkgs.tor-browser}/bin/tor-browser \
-            --set ONION_BROWSER_BUNDLE ${pkgs.tor-browser}/share/tor-browser
+            --set TOR_MCP_BINARY ${pkgs.tor-browser}/bin/tor-browser \
+            --set TOR_MCP_BUNDLE ${pkgs.tor-browser}/share/tor-browser
         '';
         meta = {
           description = "Lazy Tor Browser automation for AI agents";
-          homepage = "https://github.com/willfish/onion-browser";
+          homepage = "https://github.com/willfish/tor-mcp";
           license = pkgs.lib.licenses.mit;
           platforms = [ system ];
-          mainProgram = "onion-browser";
+          mainProgram = "tor-mcp";
         };
       };
     in
@@ -37,7 +37,7 @@
       packages.${system}.default = package;
       apps.${system}.default = {
         type = "app";
-        program = "${package}/bin/onion-browser";
+        program = "${package}/bin/tor-mcp";
         meta.description = package.meta.description;
       };
       devShells.${system}.default = pkgs.mkShell {
@@ -50,8 +50,8 @@
           pkgs.pkg-config
         ]
         ++ runtime;
-        ONION_BROWSER_BINARY = "${pkgs.tor-browser}/bin/tor-browser";
-        ONION_BROWSER_BUNDLE = "${pkgs.tor-browser}/share/tor-browser";
+        TOR_MCP_BINARY = "${pkgs.tor-browser}/bin/tor-browser";
+        TOR_MCP_BUNDLE = "${pkgs.tor-browser}/share/tor-browser";
       };
       checks.${system}.default = package;
     };

@@ -137,10 +137,11 @@ impl Manager {
                 }
                 bail!("session_not_running: call browser_open for this session first");
             }
-            let permit =
-                self.capacity.clone().try_acquire_owned().context(
-                    "session_capacity: close a session or raise ONION_BROWSER_MAX_SESSIONS",
-                )?;
+            let permit = self
+                .capacity
+                .clone()
+                .try_acquire_owned()
+                .context("session_capacity: close a session or raise TOR_MCP_MAX_SESSIONS")?;
             let session = Session::launch(&self.config, &name, headed).await?;
             slot.session = Some(session);
             slot.permit = Some(permit);
